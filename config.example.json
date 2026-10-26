@@ -1,0 +1,7 @@
+{
+  "appId": 123456,
+  "installationId": 12345678,
+  "privateKeyPath": "~/.config/gh-app/private-key.pem",
+  "username": "x-access-token",
+  "domain": "github.com"
+}

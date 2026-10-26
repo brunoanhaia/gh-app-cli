@@ -1,0 +1,29 @@
+# Binaries and artifacts
+bin/
+artifacts/
+**/bin/
+**/obj/
+TestResults/
+*.user
+*.suo
+
+# Local configs and keys
+/config.json
+*.pem
+*.key
+*.p12
+*.pfx
+/.env
+/.env.*
+
+# Locally generated gitconfig
+/gh-app.gitconfig
+
+# Logs and temporary files
+*.log
+coverage.*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.vs/
