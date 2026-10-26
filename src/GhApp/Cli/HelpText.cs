@@ -9,6 +9,7 @@ Usage:
   gh-app identity [--verify] [flags]
   gh-app token [flags]
   gh-app credential [flags] get|store|erase|generate
+  gh-app get|store|erase
   gh-app generate [flags]
   gh-app setup [flags] <repo>
   gh-app version [--verbose]
@@ -55,6 +56,9 @@ Usage: gh-app credential [flags] get|store|erase|generate
   store     no-op
   erase     no-op
   generate  alias for gh-app generate
+
+Direct custom-helper form: gh-app get|store|erase.
+Unknown helper operations are ignored.
 
 Flags: common flags, plus -output and -helper-name.
 """;

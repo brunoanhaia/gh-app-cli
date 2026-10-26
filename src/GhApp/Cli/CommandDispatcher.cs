@@ -54,7 +54,12 @@ internal sealed class CommandDispatcher
                 case "token":
                     return await RunTokenAsync(args.Skip(1).ToArray());
                 case "credential":
-                    return await RunCredentialAsync(args.Skip(1).ToArray());
+                    return await RunCredentialAsync(args.Skip(1).ToArray(), helperMode: false);
+                case "get":
+                case "store":
+                case "erase":
+                    // Git appends the operation to a custom helper command.
+                    return await RunCredentialAsync(args, helperMode: true);
                 case "generate":
                     return await RunGenerateAsync(args.Skip(1).ToArray());
                 case "setup":
@@ -63,7 +68,14 @@ internal sealed class CommandDispatcher
 
             if (args[0].StartsWith("-", StringComparison.Ordinal))
             {
-                return await RunCredentialAsync(args);
+                return await RunCredentialAsync(args, helperMode: true);
+            }
+
+            if (_inputRedirected)
+            {
+                // Git invokes a helper with an operation argument and a pipe on
+                // stdin. Unknown operations must be ignored for compatibility.
+                return await RunCredentialAsync(args, helperMode: true);
             }
 
             _error.WriteLine($"unknown command: {args[0]}");
@@ -179,7 +191,7 @@ internal sealed class CommandDispatcher
         return 0;
     }
 
-    private async Task<int> RunCredentialAsync(string[] args)
+    private async Task<int> RunCredentialAsync(string[] args, bool helperMode)
     {
         var parsed = CliParser.Parse(args, ValueFlags("helper-name", "output"), NoValueFlags());
         if (parsed.HelpRequested)
@@ -189,6 +201,10 @@ internal sealed class CommandDispatcher
         }
         if (parsed.Positionals.Count != 1)
         {
+            if (helperMode)
+            {
+                return 0;
+            }
             _error.WriteLine("usage: gh-app credential [flags] get|store|erase|generate");
             return 1;
         }
@@ -204,10 +220,19 @@ internal sealed class CommandDispatcher
                 }
                 return 0;
             case "generate":
+                if (helperMode)
+                {
+                    return 0;
+                }
                 return await GenerateCoreAsync(parsed);
             case "get":
                 return await CredentialGetAsync(parsed);
             default:
+                if (helperMode)
+                {
+                    // Git custom helpers must ignore unsupported operations.
+                    return 0;
+                }
                 _error.WriteLine($"unknown operation: {parsed.Positionals[0]}");
                 return 1;
         }

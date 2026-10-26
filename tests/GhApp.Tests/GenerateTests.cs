@@ -23,7 +23,7 @@ public sealed class GenerateTests
         Assert.Contains("[credential \"https://github.com/acme\"]", text);
         Assert.Contains("\tuseHttpPath = true", text);
         Assert.Contains(
-            "\thelper = \"!gh-app credential -appId 123 -installationId 7 -privateKeyFile C:/keys/pk.pem -username x-access-token\"",
+            "\thelper = \"!gh-app -appId 123 -installationId 7 -privateKeyFile C:/keys/pk.pem -username x-access-token\"",
             text
         );
         Assert.Contains("[credential \"https://github.com\"]", text);

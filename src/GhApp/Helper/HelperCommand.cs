@@ -14,6 +14,9 @@ internal static class HelperCommand
 {
     private const string UnsafeShellChars = " \t\n\r'\"\\$`&|;<>()*?[]{}!";
 
+    // Builds a Git custom helper command. Git appends get/store/erase to the
+    // command line, so the executable is invoked directly in helper mode.
+    // Used by generate (multiple installations) and setup (one repository).
     public static string Build(IReadOnlyList<string> prefix, HelperSpec spec)
     {
         var parts = new List<string>();
@@ -21,7 +24,6 @@ internal static class HelperCommand
         {
             parts.Add(QuotePath(part));
         }
-        parts.Add("credential");
         parts.Add("-appId");
         parts.Add(spec.AppId.ToString(CultureInfo.InvariantCulture));
         parts.Add("-installationId");

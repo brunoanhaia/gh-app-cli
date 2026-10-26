@@ -10,7 +10,7 @@ Documentation, CLI messages, and source comments are in en-US.
 - Creates installation tokens on demand.
 - Discovers the bot identity (`slug`, `login`, `id`, `email`) through `GET /app`
   and `GET /users/<slug>[bot]`, without using `GET /user`.
-- Provides a Git credential helper (`get`, `store`, `erase`).
+- Provides a Git custom credential helper (`get`, `store`, `erase`).
 - Configures `user.name`, `user.email`, and a local credential helper per
   repository.
 - Generates a `gitconfig` with one helper per installation, a cache, and an
@@ -108,6 +108,25 @@ source ~/.bashrc
 ```
 
 Without `PATH`, use the full executable path in every command.
+
+To use the executable as a native Git helper with `credential.helper = gh-app`,
+also install it under the name `git-credential-gh-app`:
+
+Windows:
+
+```powershell
+Copy-Item "$env:LOCALAPPDATA\Programs\gh-app\gh-app.exe" `
+  "$env:LOCALAPPDATA\Programs\gh-app\git-credential-gh-app.exe"
+```
+
+Linux:
+
+```bash
+ln -sf ~/.local/bin/gh-app ~/.local/bin/git-credential-gh-app
+```
+
+Git invokes `git credential-gh-app get`, `store`, or `erase`. The app also
+accepts direct operations: `gh-app get`, `gh-app store`, and `gh-app erase`.
 
 ### 3. Create the GitHub App and store the key
 
@@ -488,6 +507,10 @@ gh-app credential generate
 - `get`: reads the request from stdin, checks the host/protocol, and returns
   `username`, `password`, and `password_expiry_utc`.
 - `store` / `erase`: no-op, exit 0; they drain stdin when it comes from a pipe.
+- Direct helper operations are also supported: `gh-app get`, `gh-app store`,
+  and `gh-app erase`.
+- Unknown helper operations are silently ignored, as required by Git's custom
+  helper contract.
 - Different host or protocol: exits without a token and without output.
 - Error: `quit=1` on stdout and a message on stderr.
 - Flags before or after the operation:
@@ -502,6 +525,26 @@ An alternative flag form also works:
 ```powershell
 gh-app -config C:\path\config.json get
 ```
+
+### Using as a native Git credential helper
+
+Git appends `get`, `store`, or `erase` to the command from `credential.helper`.
+The generated helper uses this form:
+
+```gitconfig
+[credential "https://github.com/my-org"]
+	helper = "!C:/path/gh-app.exe -appId 123456 -installationId 12345678 -privateKeyFile C:/path/pk.pem -username x-access-token"
+```
+
+Git turns this into `gh-app.exe ... get`. If you install the binary as
+`git-credential-gh-app`, the simplest configuration is:
+
+```powershell
+git config --global credential.helper gh-app
+```
+
+Git then executes `git credential-gh-app get` (and `store`/`erase`). For a
+single repository, `setup` writes the equivalent local configuration for you.
 
 ### `generate`
 
@@ -532,7 +575,7 @@ Example output:
 ```gitconfig
 [credential "https://github.com/my-org"]
 	useHttpPath = true
-	helper = "!C:/path/gh-app.exe credential -appId 123456 -installationId 12345678 -privateKeyFile C:/path/pk.pem -username x-access-token"
+	helper = "!C:/path/gh-app.exe -appId 123456 -installationId 12345678 -privateKeyFile C:/path/pk.pem -username x-access-token"
 [credential "https://github.com"]
 	helper = "cache --timeout=43200"
 [url "https://github.com"]
@@ -724,7 +767,7 @@ dotnet test --solution GhApp.slnx -c Release
 `global.json` selects the **Microsoft.Testing.Platform (MTP)** runner for .NET
 10 `dotnet test`.
 
-- 86 xUnit v3 tests, covering config, JWT, fake API, credential, gitconfig,
+- 89 xUnit v3 tests, covering config, JWT, fake API, credential, gitconfig,
   remote URL, parser, and setup with a temporary repository.
 - Manual validation against the real app: `identity`, `identity --verify`,
   `token`, `credential get`, `generate`, `setup`, `git credential fill`, and

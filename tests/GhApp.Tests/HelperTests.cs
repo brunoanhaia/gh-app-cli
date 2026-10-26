@@ -19,7 +19,7 @@ public sealed class HelperTests
         );
 
         Assert.Equal(
-            "!'C:/Program Files/gh-app/gh-app.exe' credential -appId 123 -installationId 456 -privateKeyFile 'C:/Users/Bruno/gh app/pk.pem' -username 'orih-agent[bot]' -domain ghe.example.com:8443",
+            "!'C:/Program Files/gh-app/gh-app.exe' -appId 123 -installationId 456 -privateKeyFile 'C:/Users/Bruno/gh app/pk.pem' -username 'orih-agent[bot]' -domain ghe.example.com:8443",
             command
         );
     }
@@ -42,7 +42,7 @@ public sealed class HelperTests
             ["dotnet", @"C:\app\gh-app.dll"],
             new HelperSpec(1, 2, "/home/user/pk.pem", "x-access-token", "github.com")
         );
-        Assert.StartsWith("!dotnet C:/app/gh-app.dll credential", command);
+        Assert.StartsWith("!dotnet C:/app/gh-app.dll -appId", command);
     }
 
     [Fact]

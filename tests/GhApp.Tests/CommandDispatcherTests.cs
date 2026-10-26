@@ -89,6 +89,77 @@ public sealed class CommandDispatcherTests
     }
 
     [Fact]
+    public async Task CredentialGetSupportsDirectHelperInvocation()
+    {
+        var workspace = NewWorkspace(out var configPath);
+        try
+        {
+            var factory = new FakeGitHubAppClientFactory();
+            factory.Client.Token = new InstallationToken(
+                "ghs_direct",
+                DateTimeOffset.FromUnixTimeSeconds(1_900_000_000)
+            );
+            var output = new StringWriter();
+            var dispatcher = TestFiles.CreateDispatcher(
+                output,
+                new StringWriter(),
+                new StringReader("protocol=https\nhost=github.com\n\n"),
+                inputRedirected: true,
+                factory
+            );
+
+            var code = await dispatcher.RunAsync(["get", "-config", configPath]);
+            Assert.Equal(0, code);
+            Assert.Equal(
+                "username=x-access-token\npassword=ghs_direct\npassword_expiry_utc=1900000000\n",
+                output.ToString()
+            );
+        }
+        finally
+        {
+            Directory.Delete(workspace, true);
+        }
+    }
+
+    [Fact]
+    public async Task HelperModeIgnoresUnknownOperations()
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+        var dispatcher = TestFiles.CreateDispatcher(
+            output,
+            error,
+            new StringReader(""),
+            inputRedirected: false,
+            new FakeGitHubAppClientFactory()
+        );
+
+        var code = await dispatcher.RunAsync(["-config", "missing.json", "future-operation"]);
+        Assert.Equal(0, code);
+        Assert.Equal("", output.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public async Task HelperModeIgnoresUnknownPipedOperation()
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+        var dispatcher = TestFiles.CreateDispatcher(
+            output,
+            error,
+            new StringReader(""),
+            inputRedirected: true,
+            new FakeGitHubAppClientFactory()
+        );
+
+        var code = await dispatcher.RunAsync(["future-operation"]);
+        Assert.Equal(0, code);
+        Assert.Equal("", output.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public async Task CredentialGetFailureWritesQuit()
     {
         var workspace = NewWorkspace(out var _);
@@ -210,7 +281,7 @@ public sealed class CommandDispatcherTests
             Assert.NotEqual(0xEF, bytes[0]);
             var text = Encoding.UTF8.GetString(bytes);
             Assert.Contains("[credential \"https://github.com/acme\"]", text);
-            Assert.Contains("!gh-app credential -appId 123", text);
+            Assert.Contains("!gh-app -appId 123", text);
             Assert.Contains("config written to", error.ToString());
         }
         finally
@@ -267,7 +338,7 @@ public sealed class CommandDispatcherTests
             Assert.Equal("", github[0]);
             Assert.Contains(
                 github,
-                value => value.StartsWith("!gh-app credential", StringComparison.Ordinal)
+                value => value.StartsWith("!gh-app -appId", StringComparison.Ordinal)
             );
         }
         finally

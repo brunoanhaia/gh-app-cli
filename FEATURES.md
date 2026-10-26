@@ -34,7 +34,9 @@ Features of the C#/.NET 10 `gh-app` implementation.
 
 ## Credential helper
 
-- `get`, `store`, `erase`.
+- Git custom helper with `get`, `store`, and `erase`.
+- Also supports direct helper invocation: `gh-app get|store|erase`.
+- Unknown helper operations are silently ignored.
 - Reads `protocol`, `host`, `path`, and `url` from stdin.
 - Responds only to HTTPS on the configured domain.
 - Output includes `username`, `password`, and `password_expiry_utc`.
@@ -42,6 +44,7 @@ Features of the C#/.NET 10 `gh-app` implementation.
 - Different host: no output and no token.
 - `store`/`erase` drain the pipe and exit 0.
 - Port validation: 443 for a domain without a port, explicit port for GHE.
+- The generated helper invokes the binary directly; Git appends the operation.
 
 ## Gitconfig generation
 
@@ -86,7 +89,7 @@ Features of the C#/.NET 10 `gh-app` implementation.
 ## Build and quality
 
 - .NET 10, `net10.0`, nullable enabled, and warnings as errors in the app.
-- xUnit v3 with MTP (`xunit.v3.mtp-v2` 4.0.2) and 86 tests.
+- xUnit v3 with MTP (`xunit.v3.mtp-v2` 4.0.2) and 89 tests.
 - `global.json` enables Microsoft.Testing.Platform for `dotnet test`.
 - CSharpier 1.3.0 as a local tool.
 - `build.ps1`/`build.sh` run tool restore, CSharpier check, tests, and publish
@@ -111,7 +114,7 @@ Features of the C#/.NET 10 `gh-app` implementation.
 
 ## Validation
 
-- `dotnet test --solution GhApp.slnx -c Release`: 86 tests passed.
+- `dotnet test --solution GhApp.slnx -c Release`: 89 tests passed.
 - `dotnet csharpier check .`: passed.
 - `identity`, `identity --verify`, `token`, and `credential get` against the real
   GitHub API.
