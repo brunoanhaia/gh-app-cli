@@ -57,6 +57,27 @@ Features of the C#/.NET 10 `gh-app` implementation.
 - `-output` writes UTF-8 without a BOM.
 - `-helper-name` allows using `gh-app` from `PATH`.
 
+## SSH redirect and credential cache
+
+- Installation tokens work over HTTPS, not SSH.
+- `generate` adds `url.<https-domain>.insteadOf` entries for `git@host:` and
+  `ssh://git@host/`.
+- SSH remotes are rewritten to HTTPS before Git connects.
+- Cache helper uses `git-credential-cache` with a 43200-second timeout.
+- The cache is memory-only; clear it with `git credential-cache exit`.
+- Per-account contexts use `useHttpPath=true`; host cache comes last in the
+  generated config.
+
+## Linux installer
+
+- `install-linux.sh` installs the binary under `~/.local/bin` by default.
+- Creates the `git-credential-gh-app` alias.
+- Copies the private key with mode `600`.
+- Writes `~/.config/gh-app/config.json` with mode `600`.
+- Accepts App ID, installation ID or organization, domain, and username.
+- Supports `--global-helper`, `--repo`, `--verify`, `--force`, and custom paths.
+- Does not use `sudo`, commit, or push.
+
 ## Repository setup
 
 - Validates that the path is a Git repository.
@@ -94,6 +115,8 @@ Features of the C#/.NET 10 `gh-app` implementation.
 - CSharpier 1.3.0 as a local tool.
 - `build.ps1`/`build.sh` run tool restore, CSharpier check, tests, and publish
   self-contained single-file builds.
+- `install-linux.sh` provides a user-level Linux installation/configuration
+  flow.
 - RIDs: `win-x64`, `linux-x64`, `linux-arm64`.
 - `InvariantGlobalization` to reduce the ICU dependency on Linux.
 - Coverage is not included by default; if needed, use `coverlet.MTP` 10.1.0.

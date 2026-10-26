@@ -43,53 +43,36 @@ Documentation, CLI messages, and source comments are in en-US.
 The published binary is **self-contained single-file**: the machine that only
 runs it does not need the .NET runtime. The build machine needs the SDK.
 
-## Step-by-step guide
+## Installation and configuration
 
-### 1. Where files should live
+### Windows
 
-Recommended layout:
+Recommended paths:
 
-| Item | Windows | Linux |
-|---|---|---|
-| Binary | `%LOCALAPPDATA%\Programs\gh-app\gh-app.exe` | `~/.local/bin/gh-app` |
-| Config | `%APPDATA%\gh-app\config.json` | `~/.config/gh-app/config.json` |
-| Private key | `%APPDATA%\gh-app\private-key.pem` | `~/.config/gh-app/private-key.pem` |
+| Item | Path |
+|---|---|
+| Binary | `%LOCALAPPDATA%\Programs\gh-app\gh-app.exe` |
+| Helper alias | `%LOCALAPPDATA%\Programs\gh-app\git-credential-gh-app.exe` |
+| Config | `%APPDATA%\gh-app\config.json` |
+| Private key | `%APPDATA%\gh-app\private-key.pem` |
 
-Rules:
+Keep the binary at a stable path. `setup` writes its absolute path into the
+credential helper. If you move the binary or key, run `setup` again.
 
-- Keep the binary at a stable path. `setup` writes its absolute path into the
-  Git credential helper.
-- If you move the binary or the key, run `setup` again for each repository.
-- Keep the config and key outside repositories.
-- Never commit the private key or `config.json`.
-- Portable alternative: keep `gh-app.exe`, `config.json`, and
-  `private-key.pem` in the same folder. The app finds `config.json` next to the
-  executable, and `privateKeyPath` can be relative, for example
-  `private-key.pem`.
+#### 1. Install the binary
 
-### 2. Install the binary
-
-Windows:
+Build or download `gh-app.exe`, then copy it to the stable path:
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\gh-app" | Out-Null
 Copy-Item .\bin\gh-app.exe "$env:LOCALAPPDATA\Programs\gh-app\gh-app.exe" -Force
+
+# Required for credential.helper = gh-app
+Copy-Item "$env:LOCALAPPDATA\Programs\gh-app\gh-app.exe" `
+  "$env:LOCALAPPDATA\Programs\gh-app\git-credential-gh-app.exe"
 ```
 
-Linux:
-
-```bash
-mkdir -p ~/.local/bin
-install -m 755 bin/gh-app-linux-amd64 ~/.local/bin/gh-app
-```
-
-Optionally, add the folder to `PATH`.
-
-The project `bin/` folder is only a build output. For daily use, copy the binary
-to the stable path above. If you are using a downloaded binary, copy the
-downloaded file to the same destination.
-
-Windows (reopen the terminal afterward):
+Add the directory to `PATH` (optional; reopen the terminal afterward):
 
 ```powershell
 $current = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -100,48 +83,16 @@ $current = [Environment]::GetEnvironmentVariable("Path", "User")
 )
 ```
 
-Linux:
-
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Without `PATH`, use the full executable path in every command.
-
-To use the executable as a native Git helper with `credential.helper = gh-app`,
-also install it under the name `git-credential-gh-app`:
-
-Windows:
-
-```powershell
-Copy-Item "$env:LOCALAPPDATA\Programs\gh-app\gh-app.exe" `
-  "$env:LOCALAPPDATA\Programs\gh-app\git-credential-gh-app.exe"
-```
-
-Linux:
-
-```bash
-ln -sf ~/.local/bin/gh-app ~/.local/bin/git-credential-gh-app
-```
-
-Git invokes `git credential-gh-app get`, `store`, or `erase`. The app also
-accepts direct operations: `gh-app get`, `gh-app store`, and `gh-app erase`.
-
-### 3. Create the GitHub App and store the key
-
-On GitHub:
+#### 2. Create the GitHub App and store the key
 
 1. Create or open the GitHub App.
-2. Minimum permissions:
+2. Grant these permissions:
    - **Contents**: Read and write.
    - **Metadata**: Read-only.
    - **Workflows**: Read and write, if changing `.github/workflows`.
 3. Install the app on the account or organization and select the repositories.
 4. Note the **App ID** and **Installation ID**.
-5. Generate and download the private key (`.pem`).
-
-Windows:
+5. Generate and download the private key.
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:APPDATA\gh-app" | Out-Null
@@ -151,16 +102,9 @@ icacls "$env:APPDATA\gh-app\private-key.pem" /inheritance:r `
   /grant:r "$($env:USERNAME):(R)"
 ```
 
-Linux:
+#### 3. Create `config.json`
 
-```bash
-mkdir -p ~/.config/gh-app
-install -m 600 ~/Downloads/private-key.pem ~/.config/gh-app/private-key.pem
-```
-
-### 4. Create `config.json`
-
-Windows: save it as `%APPDATA%\gh-app\config.json`.
+Save this as `%APPDATA%\gh-app\config.json`:
 
 ```json
 {
@@ -172,7 +116,159 @@ Windows: save it as `%APPDATA%\gh-app\config.json`.
 }
 ```
 
-Linux: save it as `~/.config/gh-app/config.json`.
+Replace the IDs with the real values. For an organization install, use
+`"organization": "my-org"` instead of `installationId`.
+
+#### 4. Validate authentication
+
+```powershell
+gh-app identity --verify
+```
+
+Without `PATH`:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\gh-app\gh-app.exe" identity --verify
+```
+
+The result should contain `slug`, `login`, `id`, `email`, and `repositories`.
+
+#### 5. Configure a repository
+
+The `origin` remote must use HTTPS.
+
+```powershell
+gh-app setup C:\workspace\repos\my-repo
+```
+
+`setup` writes local `user.name`, `user.email`, and a local credential helper,
+resetting inherited local helpers. It does not commit or push.
+
+#### 6. Verify the credential helper
+
+```powershell
+"protocol=https`nhost=github.com`n`n" |
+  git -C C:\workspace\repos\my-repo credential fill
+
+git -C C:\workspace\repos\my-repo ls-remote origin
+```
+
+Expected output includes `username=x-access-token`, `password=ghs_...`, and
+`password_expiry_utc=...`. Do not print or save the token.
+
+#### 7. Confirm identity and push manually
+
+```powershell
+git -C C:\workspace\repos\my-repo var GIT_AUTHOR_IDENT
+git -C C:\workspace\repos\my-repo commit --allow-empty -m "bot test"
+git -C C:\workspace\repos\my-repo push
+```
+
+#### 8. Optional global helper
+
+Generated per-account config:
+
+```powershell
+gh-app generate -output "$env:APPDATA\gh-app\gh-app.gitconfig"
+git config --global include.path "$env:APPDATA\gh-app\gh-app.gitconfig"
+```
+
+Native helper using the alias:
+
+```powershell
+git config --global credential.helper gh-app
+```
+
+If GCM runs first, reset the global helper list in Git Bash:
+
+```bash
+git config --global --unset-all credential.helper
+git config --global --add credential.helper ''
+git config --global --add credential.helper gh-app
+```
+
+Prefer per-repository `setup` when you do not want a global change.
+
+#### 9. GitHub Enterprise Server
+
+```powershell
+gh-app setup -domain ghe.example.com -config C:\path\config.json C:\repo
+```
+
+The remote must be `https://ghe.example.com/owner/repo`.
+
+### Linux
+
+Recommended paths:
+
+| Item | Path |
+|---|---|
+| Binary | `~/.local/bin/gh-app` |
+| Helper alias | `~/.local/bin/git-credential-gh-app` |
+| Config | `~/.config/gh-app/config.json` |
+| Private key | `~/.config/gh-app/private-key.pem` |
+
+Keep the binary at a stable path. `setup` writes its absolute path into the
+credential helper. If you move the binary or key, run `setup` again.
+
+#### 1. Install the binary
+
+Preferred: use the installer. Build first with `bash build.sh`, or pass
+`--binary /path/to/gh-app-linux-amd64`.
+
+```bash
+./install-linux.sh \
+  --app-id 123456 \
+  --installation-id 12345678 \
+  --key ~/Downloads/private-key.pem
+```
+
+The installer:
+
+- installs `gh-app` under `~/.local/bin`;
+- creates `git-credential-gh-app`;
+- copies the key with mode `600`;
+- writes `~/.config/gh-app/config.json` with mode `600`;
+- prompts for missing App ID, installation/org, or key;
+- supports `--organization`, `--domain`, `--username`, `--repo`, `--verify`,
+  `--global-helper`, `--force`, `--prefix`, `--config-dir`, and `--binary`;
+- does not use `sudo` and does not commit or push.
+
+Manual alternative:
+
+```bash
+mkdir -p ~/.local/bin ~/.config/gh-app
+install -m 755 bin/gh-app-linux-amd64 ~/.local/bin/gh-app
+ln -sf ~/.local/bin/gh-app ~/.local/bin/git-credential-gh-app
+```
+
+Add `~/.local/bin` to `PATH` if needed:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### 2. Create the GitHub App and store the key
+
+1. Create or open the GitHub App.
+2. Grant these permissions:
+   - **Contents**: Read and write.
+   - **Metadata**: Read-only.
+   - **Workflows**: Read and write, if changing `.github/workflows`.
+3. Install the app on the account or organization and select the repositories.
+4. Note the **App ID** and **Installation ID**.
+5. Generate and download the private key.
+
+```bash
+mkdir -p ~/.config/gh-app
+install -m 600 ~/Downloads/private-key.pem ~/.config/gh-app/private-key.pem
+```
+
+#### 3. Create `config.json`
+
+The installer creates it. For a manual setup, save this as
+`~/.config/gh-app/config.json`:
 
 ```json
 {
@@ -184,91 +280,92 @@ Linux: save it as `~/.config/gh-app/config.json`.
 }
 ```
 
-Replace `123456` and `12345678` with the real IDs. If you use an organization
-instead of an installation ID, replace `installationId` with
-`"organization": "my-org"`.
+Replace the IDs with the real values. For an organization install, use
+`"organization": "my-org"` instead of `installationId`.
 
-### 5. Validate authentication
+#### 4. Validate authentication
 
-With the binary on `PATH`:
-
-```powershell
+```bash
 gh-app identity --verify
 ```
 
-Without `PATH`, on Windows:
-
-```powershell
-& "$env:LOCALAPPDATA\Programs\gh-app\gh-app.exe" identity --verify
-```
-
-Linux:
+Without `PATH`:
 
 ```bash
 ~/.local/bin/gh-app identity --verify
 ```
 
-The expected result is JSON containing `slug`, `login`, `id`, `email`, and
-`repositories`.
+The result should contain `slug`, `login`, `id`, `email`, and `repositories`.
 
-### 6. Configure a repository
+#### 5. Configure a repository
 
 The `origin` remote must use HTTPS.
-
-```powershell
-gh-app setup C:\workspace\repos\my-repo
-```
-
-Or on Linux:
 
 ```bash
 gh-app setup ~/repos/my-repo
 ```
 
-`setup` writes the following to the repository:
+`setup` writes local `user.name`, `user.email`, and a local credential helper,
+resetting inherited local helpers. It does not commit or push.
 
-- the bot `user.name` and `user.email`;
-- a local credential helper;
-- a reset of local helpers so the GCM does not interfere.
+#### 6. Verify the credential helper
 
-It **does not** commit or push.
+```bash
+printf 'protocol=https\nhost=github.com\n\n' |
+  git -C ~/repos/my-repo credential fill
 
-### 7. Confirm commit identity
-
-```powershell
-git -C C:\workspace\repos\my-repo var GIT_AUTHOR_IDENT
-git -C C:\workspace\repos\my-repo var GIT_COMMITTER_IDENT
+git -C ~/repos/my-repo ls-remote origin
 ```
 
-The name should be `<slug>[bot]`, and the email should be
-`<id>+<slug>[bot]@users.noreply.github.com`.
+Expected output includes `username=x-access-token`, `password=ghs_...`, and
+`password_expiry_utc=...`. Do not print or save the token.
 
-### 8. Commit and push manually
+#### 7. Confirm identity and push manually
 
-```powershell
-git -C C:\workspace\repos\my-repo commit --allow-empty -m "bot test"
-git -C C:\workspace\repos\my-repo push
+```bash
+git -C ~/repos/my-repo var GIT_AUTHOR_IDENT
+git -C ~/repos/my-repo commit --allow-empty -m "bot test"
+git -C ~/repos/my-repo push
 ```
 
-### 9. Optional global configuration
+#### 8. Optional global helper
 
-To use the app across multiple repositories:
+Generated per-account config:
 
-```powershell
-gh-app generate -output "$env:APPDATA\gh-app\gh-app.gitconfig"
-git config --global include.path "$env:APPDATA\gh-app\gh-app.gitconfig"
+```bash
+gh-app generate -output ~/.config/gh-app/gh-app.gitconfig
+git config --global include.path ~/.config/gh-app/gh-app.gitconfig
 ```
 
-If the GCM opens a dialog, prefer the per-repository `setup`.
+Native helper using the alias:
 
-### 10. GitHub Enterprise Server
+```bash
+git config --global credential.helper gh-app
+```
 
-```powershell
-gh-app setup -domain ghe.example.com -config C:\path\config.json C:\repo
+If GCM or another helper runs first:
+
+```bash
+git config --global --unset-all credential.helper
+git config --global --add credential.helper ''
+git config --global --add credential.helper gh-app
+```
+
+This affects all repositories. Prefer per-repository `setup` when possible.
+
+#### 9. GitHub Enterprise Server
+
+```bash
+gh-app setup -domain ghe.example.com -config ~/.config/gh-app/config.json ~/repos/my-repo
 ```
 
 The remote must be `https://ghe.example.com/owner/repo`.
 
+### Supported platforms
+
+- Windows x64.
+- Linux x64 and Linux arm64.
+- macOS is not currently tested.
 ## Architecture
 
 ```text
@@ -287,6 +384,7 @@ The remote must be `https://ghe.example.com/owner/repo`.
     Helper/                  helper command quoting and executable resolution
     Services/                application services
   tests/GhApp.Tests/         xUnit v3 tests
+  install-linux.sh           Linux install/config helper
   build.ps1
   build.sh
   README.md
@@ -406,6 +504,66 @@ dotnet publish src/GhApp/GhApp.csproj -c Release -r win-x64 --self-contained tru
 
 There is no macOS cross-build in this script; you can add the RIDs
 (`osx-x64`, `osx-arm64`) if needed, but they have not been tested.
+
+## SSH redirect and credential cache
+
+GitHub App installation tokens work over HTTPS, not SSH. The recommended
+pattern is to rewrite SSH GitHub URLs to HTTPS so Git uses the credential
+helper, and optionally use Git's in-memory credential cache to avoid unnecessary
+token requests.
+
+### Redirect SSH to HTTPS
+
+For GitHub.com:
+
+```bash
+git config --global --add url."https://github.com".insteadOf "ssh://git@github.com"
+git config --global --add url."https://github.com".insteadOf "git@github.com:"
+```
+
+`gh-app generate` adds both redirects automatically. For GitHub Enterprise
+Server, use the configured domain, for example:
+
+```bash
+git config --global --add url."https://ghe.example.com".insteadOf "ssh://git@ghe.example.com"
+git config --global --add url."https://ghe.example.com".insteadOf "git@ghe.example.com:"
+```
+
+The remote can remain an SSH URL; Git rewrites it before connecting. This is a
+URL rewrite, not SSH authentication, and it applies to all matching repositories.
+
+### Credential cache helper
+
+Git ships `git-credential-cache`, which stores credentials in memory for a
+configurable time. Installation tokens last about one hour, so use at least two
+hours. The app's generated config uses 12 hours:
+
+```bash
+git config --global --add credential.helper 'cache --timeout=43200'
+```
+
+Or scope the cache to GitHub only:
+
+```bash
+git config --global --add credential."https://github.com".helper 'cache --timeout=43200'
+```
+
+The cache is memory-only and disappears when its daemon exits. To clear it:
+
+```bash
+git credential-cache exit
+```
+
+Git invokes helpers in order and stops once it has credentials. The generated
+config follows the upstream layout: narrow per-account contexts come first,
+`useHttpPath=true` narrows them to the account path, and the host cache comes
+last. If you want the cache to avoid API calls before a per-account helper runs,
+place the cache at a higher-priority global context and verify the result with
+`git credential fill`. Otherwise the per-account helper generates a token on
+demand.
+
+`setup` writes only a local helper and resets inherited local helpers. It does
+not modify global cache or SSH settings.
 
 ## Configuration
 
