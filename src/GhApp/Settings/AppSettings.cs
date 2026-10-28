@@ -6,8 +6,8 @@ internal sealed class AppSettings
 {
     public long AppId { get; set; }
     public long InstallationId { get; set; }
-    public string Organization { get; set; } = "";
-    public string PrivateKeyFile { get; set; } = "";
+    public string Organization { get; set; } = string.Empty;
+    public string PrivateKeyFile { get; set; } = string.Empty;
     public byte[] PrivateKeyPem { get; set; } = [];
     public string Username { get; set; } = "x-access-token";
     public string Domain { get; set; } = "github.com";

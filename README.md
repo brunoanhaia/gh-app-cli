@@ -1,8 +1,10 @@
 # gh-app (.NET / C#)
 
 A C#/.NET 10 application that authenticates commits and pushes as a GitHub App
-bot, with no webhook, no server, and no `GH_TOKEN` in the environment.
-Documentation, CLI messages, and source comments are in en-US.
+bot, with no webhook, no server, and no `GH_TOKEN` dependency for its own
+authentication. The optional `gh` command passes a short-lived token only to the
+child GitHub CLI process. Documentation, CLI messages, and source comments are
+in en-US.
 
 ## What it does
 
@@ -11,6 +13,7 @@ Documentation, CLI messages, and source comments are in en-US.
 - Discovers the bot identity (`slug`, `login`, `id`, `email`) through `GET /app`
   and `GET /users/<slug>[bot]`, without using `GET /user`.
 - Provides a Git custom credential helper (`get`, `store`, `erase`).
+- Runs GitHub CLI (`gh`) with an installation token through `gh-app gh`.
 - Configures `user.name`, `user.email`, and a local credential helper per
   repository.
 - Generates a `gitconfig` with one helper per installation, a cache, and an
@@ -22,7 +25,9 @@ Documentation, CLI messages, and source comments are in en-US.
 ## What it does not do
 
 - It does not run a webhook or HTTP server.
-- It does not read `GH_TOKEN`, `GITHUB_TOKEN`, or similar variables.
+- It does not use `GH_TOKEN`, `GITHUB_TOKEN`, or similar variables for its own
+  authentication. `gh-app gh` sets those variables only in the child `gh`
+  process.
 - It does not write installation tokens to disk.
 - It does not commit, push, or modify the remote by itself.
 - It does not sign commits (GitHub's "Verified" badge requires GPG/SSH signing).
@@ -32,6 +37,8 @@ Documentation, CLI messages, and source comments are in en-US.
 
 - Git.
 - .NET SDK 10 to build. Tested with SDK `10.0.403` and runtime `10.0.14`.
+- GitHub CLI (`gh`) only for `gh-app gh`; the rest of the application does not
+  need it.
 - A GitHub App installed on an account or organization, with access to the
   repositories.
 - App permissions:
@@ -173,6 +180,9 @@ gh-app generate -output "$env:APPDATA\gh-app\gh-app.gitconfig"
 git config --global include.path "$env:APPDATA\gh-app\gh-app.gitconfig"
 ```
 
+Add `-include-user` if you want the generated file to set the bot identity
+globally. Without it, use `setup` per repository.
+
 Native helper using the alias:
 
 ```powershell
@@ -196,6 +206,18 @@ gh-app setup -domain ghe.example.com -config C:\path\config.json C:\repo
 ```
 
 The remote must be `https://ghe.example.com/owner/repo`.
+
+#### 10. Optional: GitHub CLI
+
+Install `gh` from <https://cli.github.com/> and confirm it is on `PATH`:
+
+```powershell
+gh --version
+gh-app gh repo view OWNER/REPO --json name
+```
+
+Do not run `gh auth login`; `gh-app gh` supplies an installation token to the
+child process. The token is cached in memory by `git-credential-cache`.
 
 ### Linux
 
@@ -337,6 +359,9 @@ gh-app generate -output ~/.config/gh-app/gh-app.gitconfig
 git config --global include.path ~/.config/gh-app/gh-app.gitconfig
 ```
 
+Add `-include-user` if you want the generated file to set the bot identity
+globally. Without it, use `setup` per repository.
+
 Native helper using the alias:
 
 ```bash
@@ -360,6 +385,18 @@ gh-app setup -domain ghe.example.com -config ~/.config/gh-app/config.json ~/repo
 ```
 
 The remote must be `https://ghe.example.com/owner/repo`.
+
+#### 10. Optional: GitHub CLI
+
+Install `gh` from <https://cli.github.com/> or your package manager, then verify:
+
+```bash
+gh --version
+gh-app gh repo view OWNER/REPO --json name
+```
+
+Do not run `gh auth login`; `gh-app gh` supplies an installation token to the
+child process. The token is cached in memory by `git-credential-cache`.
 
 ### Supported platforms
 
@@ -407,6 +444,8 @@ Main interfaces:
 - `IRepositorySetup` / `RepositorySetup`
 - `IGitHubAppClientFactory` / `GitHubAppClientFactory`
 - `IExecutableResolver` / `ExecutableResolver`
+- `IGhCliRunner` / `GhCliRunner` - launches `gh` and maps token environment.
+- `IGitCredentialCache` / `GitCredentialCache` - memory-only token cache.
 
 This allows the CLI, setup, and services to be tested with fakes, without
 network access and without a real Git repository when necessary.
@@ -548,7 +587,12 @@ Or scope the cache to GitHub only:
 git config --global --add credential."https://github.com".helper 'cache --timeout=43200'
 ```
 
-The cache is memory-only and disappears when its daemon exits. To clear it:
+The cache is memory-only and disappears when its daemon exits. `gh-app gh` uses
+the same daemon with a 3300-second timeout and checks `password_expiry_utc` with
+a five-minute margin before using a token. Its entries use a `gh-app/...` path
+namespace, so they do not collide with repository credentials.
+
+To clear both Git and `gh` entries:
 
 ```bash
 git credential-cache exit
@@ -653,6 +697,61 @@ gh-app token
 
 Use with care: any redirection may write the token to disk.
 
+### `gh`
+
+Runs GitHub CLI from `PATH` with an installation token. All arguments after `gh`
+are forwarded unchanged, including arguments that start with `-`:
+
+```powershell
+gh-app gh repo view OWNER/REPO --json name
+gh-app gh api repos/OWNER/REPO/issues
+```
+
+The child exit code becomes the `gh-app gh` exit code.
+
+The first call resolves the installation ID, looks up the token in
+`git-credential-cache`, mints a token on a miss, and stores it in the cache. The
+cache key is namespaced by app and installation:
+
+```text
+protocol=https
+host=<domain>
+path=gh-app/<appId>/<installationId>
+```
+
+The cache uses `git-credential-cache --timeout=3300`. A cached token is reused
+only when it has more than five minutes left. Expired or nearly expired tokens
+are replaced. If the cache is unavailable, `gh-app gh` prints a warning and
+continues with a directly minted token. The cache is memory-only; no token is
+written to disk.
+
+`gh-app gh` uses the normal config discovery (`GH_APP_CONFIG`, next to the
+binary, or the user config). It does not parse app flags after `gh`; use
+`GH_APP_CONFIG` to select another config.
+
+The token is passed only to the child process:
+
+| Domain | Environment |
+|---|---|
+| `github.com` | `GH_TOKEN` |
+| `*.ghe.com` | `GH_TOKEN`, `GH_HOST` |
+| GitHub Enterprise Server | `GH_ENTERPRISE_TOKEN`, `GH_HOST` |
+
+Inherited `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`,
+`GITHUB_ENTERPRISE_TOKEN`, and `GH_HOST` are removed first, so a stale token
+from the parent shell cannot override the app token.
+
+Do not run `gh auth login` for this flow. An installation token has no user
+context, so `gh api user` fails; repository and installation endpoints work
+according to the app permissions. If `gh` is not on `PATH`, the command fails
+with a clear error.
+
+To clear the cache used by both Git and `gh`:
+
+```bash
+git credential-cache exit
+```
+
 ### `credential`
 
 ```powershell
@@ -727,6 +826,16 @@ Options:
 - `-output PATH`
 - `-helper-name NAME`: binary name/path used in the helper. Default: current
   executable (or `dotnet <dll>` when running through `dotnet run`).
+- `-include-user`: adds a `[user]` section with the bot's `name` and `email`.
+  This is opt-in because a global gitconfig with the bot identity affects every
+  repository that includes it.
+
+Default output does not include `[user]`. For per-repository identity, use
+`setup`. To generate a global bot identity explicitly:
+
+```powershell
+gh-app generate -include-user -output "$env:APPDATA\gh-app\gh-app.gitconfig"
+```
 
 Example output:
 
@@ -825,8 +934,10 @@ uses standard .NET TLS validation and offers no way to disable verification.
 - The private key is the main secret: use `chmod 600` on Linux and a restricted
   ACL on Windows.
 - The app does not persist installation tokens on disk.
-- `generate` may use `git-credential-cache`, which keeps tokens in memory; clear
-  it with `git credential-cache exit`.
+- `generate` and `gh-app gh` may use `git-credential-cache`, which keeps tokens
+  in memory; clear it with `git credential-cache exit`.
+- `gh-app gh` passes the token only in the child process environment and removes
+  inherited GitHub token variables first.
 - The helper only responds to HTTPS on the configured host (port 443 or the
   explicit GHE domain port).
 - Errors do not print tokens. The `token` command prints by design.
@@ -858,8 +969,30 @@ Use the published binary in `bin/` for `setup`/`generate`, or pass
 
 ### `403 Resource not accessible by integration` on `GET /user`
 
-Expected. Installation tokens cannot call `GET /user`. Identity is discovered
-through `GET /app` + `GET /users/<slug>[bot]`.
+Expected. Installation tokens cannot call `GET /user`, including through
+`gh-app gh api user`. Identity is discovered through `GET /app` +
+`GET /users/<slug>[bot]`. Use repository or installation endpoints instead.
+
+### `gh: command not found` from `gh-app gh`
+
+Install GitHub CLI and put it on `PATH`:
+
+```powershell
+gh --version
+```
+
+The rest of the application does not need `gh`.
+
+### Cached token is stale or rejected
+
+Clear the memory cache and run the command again:
+
+```bash
+git credential-cache exit
+```
+
+`gh-app gh` refreshes tokens with less than five minutes remaining; a server-side
+revocation may still require clearing the cache.
 
 ### `404` or repository outside the installation
 
@@ -925,11 +1058,17 @@ dotnet test --solution GhApp.slnx -c Release
 `global.json` selects the **Microsoft.Testing.Platform (MTP)** runner for .NET
 10 `dotnet test`.
 
-- 89 xUnit v3 tests, covering config, JWT, fake API, credential, gitconfig,
-  remote URL, parser, and setup with a temporary repository.
+- 99 xUnit v3 tests, covering config, JWT, fake API, credential, gitconfig,
+  remote URL, parser, `gh` environment/cache orchestration, and setup with a
+  temporary repository.
 - Manual validation against the real app: `identity`, `identity --verify`,
   `token`, `credential get`, `generate`, `setup`, `git credential fill`, and
   `git ls-remote`.
+- `gh-app gh` orchestration with a fake runner: cache hit, miss, expiry,
+  argument forwarding, and exit code.
+- Real `git-credential-cache` store/get, path isolation, and expiry parsing.
+- `gh-app gh` on WSL with `gh` 2.103.0: `--version` and
+  `api /installation/repositories`, including a cache hit on the second call.
 - Published Windows and Linux x64 on WSL.
 - **No real commit or push was executed.**
 

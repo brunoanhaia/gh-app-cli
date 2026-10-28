@@ -1,4 +1,5 @@
 ﻿using GhApp.Cli;
+using GhApp.Credential;
 using GhApp.Git;
 using GhApp.GitHub;
 using GhApp.Helper;
@@ -21,6 +22,8 @@ internal static class Program
         services.AddSingleton<IExecutableResolver, ExecutableResolver>();
         services.AddSingleton<IGitHubAppClientFactory, GitHubAppClientFactory>();
         services.AddSingleton<IGhAppService, GhAppService>();
+        services.AddSingleton<IGitCredentialCache, GitCredentialCache>();
+        services.AddSingleton<IGhCliRunner, GhCliRunner>();
         services.AddTransient<CommandDispatcher>();
 
         using var provider = services.BuildServiceProvider();

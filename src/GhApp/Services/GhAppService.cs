@@ -34,6 +34,17 @@ internal interface IGhAppService
         CancellationToken cancellationToken = default
     );
 
+    Task<long> GetInstallationIdAsync(
+        AppSettings settings,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<InstallationToken> GetTokenAsync(
+        AppSettings settings,
+        long installationId,
+        CancellationToken cancellationToken = default
+    );
+
     Task<IReadOnlyList<GitHubInstallation>> ListInstallationsAsync(
         AppSettings settings,
         CancellationToken cancellationToken = default
@@ -48,6 +59,7 @@ internal interface IGhAppService
     Task<GeneratedConfig> GenerateConfigAsync(
         AppSettings settings,
         string? helperName,
+        bool includeUser,
         CancellationToken cancellationToken = default
     );
 }
@@ -86,6 +98,25 @@ internal sealed class GhAppService : IGhAppService
     {
         using var client = _clientFactory.Create(settings);
         var installationId = await client.GetInstallationIdAsync(cancellationToken);
+        return await client.CreateInstallationTokenAsync(installationId, cancellationToken);
+    }
+
+    public async Task<long> GetInstallationIdAsync(
+        AppSettings settings,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var client = _clientFactory.Create(settings);
+        return await client.GetInstallationIdAsync(cancellationToken);
+    }
+
+    public async Task<InstallationToken> GetTokenAsync(
+        AppSettings settings,
+        long installationId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var client = _clientFactory.Create(settings);
         return await client.CreateInstallationTokenAsync(installationId, cancellationToken);
     }
 
@@ -155,11 +186,13 @@ internal sealed class GhAppService : IGhAppService
     public async Task<GeneratedConfig> GenerateConfigAsync(
         AppSettings settings,
         string? helperName,
+        bool includeUser,
         CancellationToken cancellationToken = default
     )
     {
         using var client = _clientFactory.Create(settings);
         var installations = await client.ListInstallationsAsync(cancellationToken);
+        var identity = includeUser ? await client.GetIdentityAsync(false, cancellationToken) : null;
         var prefix = string.IsNullOrWhiteSpace(helperName)
             ? _executableResolver.DefaultPrefix()
             : _executableResolver.FromHelperName(helperName);
@@ -168,7 +201,8 @@ internal sealed class GhAppService : IGhAppService
             settings.Username,
             settings.AppId,
             settings.PrivateKeyFile,
-            prefix
+            prefix,
+            identity
         );
         using var writer = new StringWriter();
         GhApp.Generate.GitConfigGenerator.Write(writer, installations, options);

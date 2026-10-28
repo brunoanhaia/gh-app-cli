@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GhApp.Cli;
+using GhApp.Credential;
 using GhApp.Git;
 using GhApp.GitHub;
 using GhApp.Helper;
@@ -160,6 +161,79 @@ internal sealed class FakeGitHubAppClientFactory : IGitHubAppClientFactory
     }
 }
 
+internal sealed class FakeGitCredentialCache : IGitCredentialCache
+{
+    public CachedCredential? Value { get; set; }
+
+    public bool GetCalled { get; private set; }
+
+    public bool StoreCalled { get; private set; }
+
+    public string? LastDomain { get; private set; }
+
+    public string? LastKey { get; private set; }
+
+    public string? LastUsername { get; private set; }
+
+    public string? LastToken { get; private set; }
+
+    public DateTimeOffset? LastExpires { get; private set; }
+
+    public Task<CachedCredential?> GetAsync(
+        string domain,
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        GetCalled = true;
+        LastDomain = domain;
+        LastKey = key;
+        return Task.FromResult(Value);
+    }
+
+    public Task StoreAsync(
+        string domain,
+        string key,
+        string username,
+        string token,
+        DateTimeOffset expires,
+        CancellationToken cancellationToken = default
+    )
+    {
+        StoreCalled = true;
+        LastDomain = domain;
+        LastKey = key;
+        LastUsername = username;
+        LastToken = token;
+        LastExpires = expires;
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeGhCliRunner : IGhCliRunner
+{
+    public int ExitCode { get; set; }
+
+    public AppSettings? LastSettings { get; private set; }
+
+    public string? LastToken { get; private set; }
+
+    public IReadOnlyList<string> LastArgs { get; private set; } = [];
+
+    public Task<int> RunAsync(
+        AppSettings settings,
+        string token,
+        IReadOnlyList<string> args,
+        CancellationToken cancellationToken = default
+    )
+    {
+        LastSettings = settings;
+        LastToken = token;
+        LastArgs = args;
+        return Task.FromResult(ExitCode);
+    }
+}
+
 internal sealed class FakeExecutableResolver : IExecutableResolver
 {
     public IReadOnlyList<string> Prefix { get; set; } = ["gh-app"];
@@ -223,7 +297,9 @@ internal static class TestFiles
         TextReader input,
         bool inputRedirected,
         IGitHubAppClientFactory factory,
-        IExecutableResolver? resolver = null
+        IExecutableResolver? resolver = null,
+        IGitCredentialCache? credentialCache = null,
+        IGhCliRunner? ghCli = null
     )
     {
         var git = new GitRunner();
@@ -234,7 +310,9 @@ internal static class TestFiles
         );
         return new CommandDispatcher(
             new ConsoleContext(output, error, input, inputRedirected),
-            service
+            service,
+            credentialCache ?? new FakeGitCredentialCache(),
+            ghCli ?? new FakeGhCliRunner()
         );
     }
 }

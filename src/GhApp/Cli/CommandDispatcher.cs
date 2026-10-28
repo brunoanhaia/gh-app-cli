@@ -17,14 +17,23 @@ internal sealed class CommandDispatcher
     private readonly TextReader _in;
     private readonly bool _inputRedirected;
     private readonly IGhAppService _service;
+    private readonly IGitCredentialCache _credentialCache;
+    private readonly IGhCliRunner _ghCli;
 
-    public CommandDispatcher(ConsoleContext console, IGhAppService service)
+    public CommandDispatcher(
+        ConsoleContext console,
+        IGhAppService service,
+        IGitCredentialCache credentialCache,
+        IGhCliRunner ghCli
+    )
     {
         _out = console.Out;
         _error = console.Error;
         _in = console.In;
         _inputRedirected = console.InputRedirected;
         _service = service;
+        _credentialCache = credentialCache;
+        _ghCli = ghCli;
     }
 
     public async Task<int> RunAsync(string[] args)
@@ -64,6 +73,8 @@ internal sealed class CommandDispatcher
                     return await RunGenerateAsync(args.Skip(1).ToArray());
                 case "setup":
                     return await RunSetupAsync(args.Skip(1).ToArray());
+                case "gh":
+                    return await RunGhAsync(args.Skip(1).ToArray());
             }
 
             if (args[0].StartsWith("-", StringComparison.Ordinal))
@@ -191,9 +202,68 @@ internal sealed class CommandDispatcher
         return 0;
     }
 
+    private async Task<int> RunGhAsync(string[] args)
+    {
+        var settings = Resolve(
+            new ParsedArgs(new Dictionary<string, string?>(StringComparer.Ordinal), [], false)
+        );
+        settings.ValidateAuth();
+        settings.ValidateInstallation();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var installationId = await _service.GetInstallationIdAsync(settings, cts.Token);
+        var cacheKey = $"gh-app/{settings.AppId}/{installationId}";
+
+        CachedCredential? cached = null;
+        try
+        {
+            cached = await _credentialCache.GetAsync(settings.Domain, cacheKey, cts.Token);
+        }
+        catch (GhAppException ex)
+        {
+            _error.WriteLine($"warning: token cache unavailable: {ex.Message}");
+        }
+
+        string token;
+        if (
+            cached is not null
+            && cached.ExpiresAt is { } expiresAt
+            && expiresAt > DateTimeOffset.UtcNow.AddMinutes(5)
+        )
+        {
+            token = cached.Token;
+        }
+        else
+        {
+            var minted = await _service.GetTokenAsync(settings, installationId, cts.Token);
+            token = minted.Token;
+            try
+            {
+                await _credentialCache.StoreAsync(
+                    settings.Domain,
+                    cacheKey,
+                    settings.Username,
+                    minted.Token,
+                    minted.ExpiresAt,
+                    cts.Token
+                );
+            }
+            catch (GhAppException ex)
+            {
+                _error.WriteLine($"warning: could not cache token: {ex.Message}");
+            }
+        }
+
+        return await _ghCli.RunAsync(settings, token, args);
+    }
+
     private async Task<int> RunCredentialAsync(string[] args, bool helperMode)
     {
-        var parsed = CliParser.Parse(args, ValueFlags("helper-name", "output"), NoValueFlags());
+        var parsed = CliParser.Parse(
+            args,
+            ValueFlags("helper-name", "output"),
+            BoolFlags("include-user")
+        );
         if (parsed.HelpRequested)
         {
             _out.Write(HelpText.Credential);
@@ -285,7 +355,11 @@ internal sealed class CommandDispatcher
 
     private async Task<int> RunGenerateAsync(string[] args)
     {
-        var parsed = CliParser.Parse(args, ValueFlags("helper-name", "output"), NoValueFlags());
+        var parsed = CliParser.Parse(
+            args,
+            ValueFlags("helper-name", "output"),
+            BoolFlags("include-user")
+        );
         if (parsed.HelpRequested)
         {
             _out.Write(HelpText.Generate);
@@ -306,7 +380,13 @@ internal sealed class CommandDispatcher
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var helperName = parsed.IsSet("helper-name") ? parsed.Value("helper-name") : null;
-        var generated = await _service.GenerateConfigAsync(settings, helperName, cts.Token);
+        var includeUser = parsed.Bool("include-user");
+        var generated = await _service.GenerateConfigAsync(
+            settings,
+            helperName,
+            includeUser,
+            cts.Token
+        );
 
         var output = (parsed.Value("output") ?? "").Trim();
         if (output.Length == 0)

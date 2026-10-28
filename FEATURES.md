@@ -8,6 +8,7 @@ Features of the C#/.NET 10 `gh-app` implementation.
 - `identity --verify`
 - `token`
 - `credential get|store|erase|generate`
+- `gh [args...]`
 - `generate`
 - `setup`
 - `version` / `version --verbose`
@@ -31,6 +32,24 @@ Features of the C#/.NET 10 `gh-app` implementation.
 - `identity --verify` counts repositories through
   `/installation/repositories`.
 - GitHub.com and GitHub Enterprise Server (`/api/v3`).
+
+## GitHub CLI
+
+- `gh-app gh [args...]` runs `gh` from `PATH` and forwards every argument.
+- Child exit code is returned unchanged.
+- Token cache through `git-credential-cache`, keyed by domain and
+  `gh-app/<appId>/<installationId>`.
+- First call mints and stores a token; later calls reuse it while more than five
+  minutes remain.
+- Cache timeout is 3300 seconds; the cache is memory-only.
+- Cache failure falls back to a directly minted token with a warning.
+- Token environment:
+  - `github.com`: `GH_TOKEN`.
+  - `*.ghe.com`: `GH_TOKEN` and `GH_HOST`.
+  - GitHub Enterprise Server: `GH_ENTERPRISE_TOKEN` and `GH_HOST`.
+- Inherited GitHub token and `GH_HOST` variables are removed before launch.
+- No `gh auth login`; installation tokens have no user context.
+- Missing `gh` produces an explicit error.
 
 ## Credential helper
 
@@ -56,6 +75,7 @@ Features of the C#/.NET 10 `gh-app` implementation.
 - `git@host:` and `ssh://git@host/` to HTTPS redirect.
 - `-output` writes UTF-8 without a BOM.
 - `-helper-name` allows using `gh-app` from `PATH`.
+- `-include-user` optionally adds `[user]` with the bot `name` and `email`.
 
 ## SSH redirect and credential cache
 
@@ -110,7 +130,7 @@ Features of the C#/.NET 10 `gh-app` implementation.
 ## Build and quality
 
 - .NET 10, `net10.0`, nullable enabled, and warnings as errors in the app.
-- xUnit v3 with MTP (`xunit.v3.mtp-v2` 4.0.2) and 89 tests.
+- xUnit v3 with MTP (`xunit.v3.mtp-v2` 4.0.2) and 99 tests.
 - `global.json` enables Microsoft.Testing.Platform for `dotnet test`.
 - CSharpier 1.3.0 as a local tool.
 - `build.ps1`/`build.sh` run tool restore, CSharpier check, tests, and publish
@@ -137,13 +157,18 @@ Features of the C#/.NET 10 `gh-app` implementation.
 
 ## Validation
 
-- `dotnet test --solution GhApp.slnx -c Release`: 89 tests passed.
+- `dotnet test --solution GhApp.slnx -c Release`: 99 tests passed.
 - `dotnet csharpier check .`: passed.
 - `identity`, `identity --verify`, `token`, and `credential get` against the real
   GitHub API.
 - `generate -output` and use of the generated file.
 - `setup` in a temporary repository on Windows and Linux (WSL).
 - `git credential fill`, `git var GIT_AUTHOR_IDENT`, and `git ls-remote`.
+- `gh` command orchestration with a fake runner, including cache hit, miss,
+  expiry, argument forwarding, and exit code.
+- Real `git-credential-cache` store/get, path isolation, and expiry parsing.
+- `gh` 2.103.0 on WSL: `--version` and `api /installation/repositories`, with a
+  cache hit on the second call.
 - `win-x64` and `linux-x64` binaries tested; `linux-arm64` compiled but not
   executed.
 - No real commit or push was executed.
@@ -159,3 +184,5 @@ Features of the C#/.NET 10 `gh-app` implementation.
 - `setup` fails if the remote is not HTTPS; this is intentional.
 - The Git cache keeps tokens in memory; clear it with
   `git credential-cache exit`.
+- Windows `gh` was not installed during validation; the process was exercised
+  with `gh` 2.103.0 on WSL.

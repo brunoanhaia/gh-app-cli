@@ -12,6 +12,7 @@ Usage:
   gh-app get|store|erase
   gh-app generate [flags]
   gh-app setup [flags] <repo>
+  gh-app gh [gh args...]
   gh-app version [--verbose]
   gh-app help
 
@@ -27,11 +28,17 @@ Common flags:
 generate flags:
   -output PATH          write the gitconfig as UTF-8 (avoids the PowerShell BOM)
   -helper-name NAME     gh-app binary name/path used in the generated helper
+  -include-user         add a [user] section with the bot identity
+
+gh:
+  Arguments after gh are forwarded unchanged. Use GH_APP_CONFIG to select a
+  configuration file; gh-app flags are not parsed in this mode.
 
 Examples:
   gh-app identity --verify
   gh-app generate -output gh-app.gitconfig
   gh-app setup --config config.json C:\workspace\repos\my-repo
+  gh-app gh repo view owner/repo
 """;
 
     public const string Identity = """
@@ -60,7 +67,7 @@ Usage: gh-app credential [flags] get|store|erase|generate
 Direct custom-helper form: gh-app get|store|erase.
 Unknown helper operations are ignored.
 
-Flags: common flags, plus -output and -helper-name.
+Flags: common flags, plus -output, -helper-name, and -include-user.
 """;
 
     public const string Generate = """
@@ -68,7 +75,7 @@ Usage: gh-app generate [flags]
 
 Generates a gitconfig with one helper per installation, useHttpPath, a 43200 s
 cache, and an SSH -> HTTPS redirect. Use -output PATH to write UTF-8 without a
-BOM.
+BOM. Use -include-user to add a [user] section with the bot identity.
 """;
 
     public const string Setup = """

@@ -1,5 +1,6 @@
 using System.Text;
 using GhApp.Cli;
+using GhApp.Credential;
 using GhApp.Git;
 using GhApp.GitHub;
 
@@ -275,11 +276,15 @@ public sealed class CommandDispatcherTests
                 configPath,
                 "-output",
                 outputPath,
+                "-include-user",
             ]);
             Assert.Equal(0, code);
             var bytes = File.ReadAllBytes(outputPath);
             Assert.NotEqual(0xEF, bytes[0]);
             var text = Encoding.UTF8.GetString(bytes);
+            Assert.Contains("[user]", text);
+            Assert.Contains("name = orih-agent[bot]", text);
+            Assert.Contains("email = 347995100+orih-agent[bot]@users.noreply.github.com", text);
             Assert.Contains("[credential \"https://github.com/acme\"]", text);
             Assert.Contains("!gh-app -appId 123", text);
             Assert.Contains("config written to", error.ToString());
@@ -372,6 +377,143 @@ public sealed class CommandDispatcherTests
         }
         finally
         {
+            Directory.Delete(workspace, true);
+        }
+    }
+
+    [Fact]
+    public async Task GhUsesCachedTokenAndForwardsArguments()
+    {
+        var workspace = NewWorkspace(out var configPath);
+        var previousConfig = Environment.GetEnvironmentVariable("GH_APP_CONFIG");
+        try
+        {
+            Environment.SetEnvironmentVariable("GH_APP_CONFIG", configPath);
+            var factory = new FakeGitHubAppClientFactory();
+            factory.Client.InstallationId = 456;
+            var cache = new FakeGitCredentialCache
+            {
+                Value = new CachedCredential("ghs_cached", DateTimeOffset.UtcNow.AddHours(1)),
+            };
+            var gh = new FakeGhCliRunner { ExitCode = 7 };
+            var error = new StringWriter();
+            var dispatcher = TestFiles.CreateDispatcher(
+                new StringWriter(),
+                error,
+                new StringReader(""),
+                inputRedirected: false,
+                factory,
+                credentialCache: cache,
+                ghCli: gh
+            );
+
+            var code = await dispatcher.RunAsync([
+                "gh",
+                "repo",
+                "view",
+                "acme/repo",
+                "--json",
+                "name",
+            ]);
+
+            Assert.Equal(7, code);
+            Assert.True(cache.GetCalled);
+            Assert.False(cache.StoreCalled);
+            Assert.Equal("github.com", cache.LastDomain);
+            Assert.Equal("gh-app/123/456", cache.LastKey);
+            Assert.Equal("ghs_cached", gh.LastToken);
+            Assert.Equal(
+                new[] { "repo", "view", "acme/repo", "--json", "name" },
+                gh.LastArgs.ToArray()
+            );
+            Assert.Equal("", error.ToString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GH_APP_CONFIG", previousConfig);
+            Directory.Delete(workspace, true);
+        }
+    }
+
+    [Fact]
+    public async Task GhMintsAndStoresTokenOnCacheMiss()
+    {
+        var workspace = NewWorkspace(out var configPath);
+        var previousConfig = Environment.GetEnvironmentVariable("GH_APP_CONFIG");
+        try
+        {
+            Environment.SetEnvironmentVariable("GH_APP_CONFIG", configPath);
+            var factory = new FakeGitHubAppClientFactory();
+            factory.Client.InstallationId = 456;
+            var expires = DateTimeOffset.UtcNow.AddHours(1);
+            factory.Client.Token = new InstallationToken("ghs_new", expires);
+            var cache = new FakeGitCredentialCache();
+            var gh = new FakeGhCliRunner();
+            var dispatcher = TestFiles.CreateDispatcher(
+                new StringWriter(),
+                new StringWriter(),
+                new StringReader(""),
+                inputRedirected: false,
+                factory,
+                credentialCache: cache,
+                ghCli: gh
+            );
+
+            var code = await dispatcher.RunAsync(["gh", "api", "user"]);
+
+            Assert.Equal(0, code);
+            Assert.True(cache.StoreCalled);
+            Assert.Equal("github.com", cache.LastDomain);
+            Assert.Equal("gh-app/123/456", cache.LastKey);
+            Assert.Equal("x-access-token", cache.LastUsername);
+            Assert.Equal("ghs_new", cache.LastToken);
+            Assert.Equal(expires, cache.LastExpires);
+            Assert.Equal("ghs_new", gh.LastToken);
+            Assert.Equal(new[] { "api", "user" }, gh.LastArgs.ToArray());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GH_APP_CONFIG", previousConfig);
+            Directory.Delete(workspace, true);
+        }
+    }
+
+    [Fact]
+    public async Task GhRefreshesExpiredCachedToken()
+    {
+        var workspace = NewWorkspace(out var configPath);
+        var previousConfig = Environment.GetEnvironmentVariable("GH_APP_CONFIG");
+        try
+        {
+            Environment.SetEnvironmentVariable("GH_APP_CONFIG", configPath);
+            var factory = new FakeGitHubAppClientFactory();
+            var expires = DateTimeOffset.UtcNow.AddHours(1);
+            factory.Client.Token = new InstallationToken("ghs_fresh", expires);
+            var cache = new FakeGitCredentialCache
+            {
+                Value = new CachedCredential("ghs_expired", DateTimeOffset.UtcNow.AddMinutes(-1)),
+            };
+            var gh = new FakeGhCliRunner();
+            var dispatcher = TestFiles.CreateDispatcher(
+                new StringWriter(),
+                new StringWriter(),
+                new StringReader(""),
+                inputRedirected: false,
+                factory,
+                credentialCache: cache,
+                ghCli: gh
+            );
+
+            var code = await dispatcher.RunAsync(["gh", "repo", "list"]);
+
+            Assert.Equal(0, code);
+            Assert.True(cache.StoreCalled);
+            Assert.Equal("ghs_fresh", cache.LastToken);
+            Assert.Equal("ghs_fresh", gh.LastToken);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GH_APP_CONFIG", previousConfig);
             Directory.Delete(workspace, true);
         }
     }

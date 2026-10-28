@@ -78,6 +78,35 @@ public sealed class GenerateTests
     }
 
     [Fact]
+    public void GeneratesUserSectionWhenRequested()
+    {
+        var output = new StringWriter();
+        var identity = new BotIdentity(
+            "orih-agent",
+            "orih-agent[bot]",
+            347995100,
+            "347995100+orih-agent[bot]@users.noreply.github.com"
+        );
+        GitConfigGenerator.Write(
+            output,
+            [],
+            new GenerateOptions(
+                "github.com",
+                "x-access-token",
+                123,
+                "/pk.pem",
+                ["gh-app"],
+                identity
+            )
+        );
+
+        var text = output.ToString();
+        Assert.Contains("[user]", text);
+        Assert.Contains("\tname = orih-agent[bot]", text);
+        Assert.Contains("\temail = 347995100+orih-agent[bot]@users.noreply.github.com", text);
+    }
+
+    [Fact]
     public void EscapesGitValues()
     {
         Assert.Equal("a\\\"b\\\\c\\n\\t ", GitConfigGenerator.EscapeGit("a\"b\\c\n\t\r"));

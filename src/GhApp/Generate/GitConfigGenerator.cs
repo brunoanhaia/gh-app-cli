@@ -8,7 +8,8 @@ internal sealed record GenerateOptions(
     string Username,
     long AppId,
     string PrivateKeyFile,
-    IReadOnlyList<string> HelperPrefix
+    IReadOnlyList<string> HelperPrefix,
+    BotIdentity? Identity = null
 );
 
 internal static class GitConfigGenerator
@@ -28,6 +29,13 @@ internal static class GitConfigGenerator
             ? "x-access-token"
             : options.Username;
         var prefix = options.HelperPrefix.Count == 0 ? new[] { "gh-app" } : options.HelperPrefix;
+
+        if (options.Identity is { } identity)
+        {
+            writer.Write("[user]\n");
+            writer.Write($"\tname = {EscapeGit(identity.Login)}\n");
+            writer.Write($"\temail = {EscapeGit(identity.Email)}\n");
+        }
 
         foreach (var installation in installations)
         {
